@@ -13,8 +13,6 @@ int servoPin = 9;
 
 // Delays
 int oneDegreeDelay = 8; // 8msec
-//int movementDelay = (9 * 60 + 30) * 1000; // 9min 30sec
-int movementDelay = 5 * 1000; // 5sec
 
 // sweep angle
 int sweepAngle = 180;
@@ -22,10 +20,29 @@ int sweepAngle = 180;
 // servo object
 Servo servo1;
 
+// delay for n seconds
+void delaySecs(int n)
+{
+  for (; n > 0; --n)
+  {
+    delay(1000); // delay one second
+  }
+}
+
+// delay for n minutes
+void delayMins(int n)
+{
+  for (; n > 0; --n)
+  {
+    delaySecs(60);
+  }
+}
+
 // sweep movement
 void sweepCcw()
 {
-  delay(movementDelay);
+  delayMins(9);
+  delaySecs(30);
   digitalWrite(LED_BUILTIN, HIGH);
   for (int pos = 0; pos <= sweepAngle; ++pos)
   {
@@ -37,7 +54,8 @@ void sweepCcw()
 
 void sweepCw()
 {
-  delay(movementDelay);
+  delayMins(9);
+  delaySecs(30);
   digitalWrite(LED_BUILTIN, HIGH);
   for (int pos = sweepAngle; pos >= 0; --pos)
   {
