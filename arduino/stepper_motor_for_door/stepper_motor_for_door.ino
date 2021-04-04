@@ -5,11 +5,13 @@
 
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
-const int RAMP_SLOW_STEP_DELAY = 30; // ms
-const int RAMP_DELAY_DELTA = 2; // increment/decrement step delay
-const int TOTAL_FULL_ROTATIONS = 5; // whole number of rotations
+const int RAMP_SLOW_STEP_DELAY = 600; // ms
+const int RAMP_DELAY_DELTA = 30; // increment/decrement step delay
+const int TOTAL_FULL_ROTATIONS = 3; // whole number of rotations
 const int REMAINDER_STEPS = 16 * 64; // currently set for half rotation
 
+// button pin
+int buttonPin = 12;
 // Connect the port of the stepper motor driver
 int outPorts[] = {11, 10, 9, 8};
 bool dir = true; // true for cw, false for ccw.
@@ -20,6 +22,8 @@ long maxSteps = 0;
 
 void setup()
 {
+  // set button pin to input
+  pinMode(buttonPin, INPUT);
   // set pins to output
   for (int i = 0; i < 4; ++i)
   {
@@ -27,7 +31,6 @@ void setup()
   }
   nStepsInRamp = (RAMP_SLOW_STEP_DELAY - NORMAL_STEP_DELAY) / RAMP_DELAY_DELTA + 1;
   maxSteps = TOTAL_FULL_ROTATIONS * 32 * 64 + REMAINDER_STEPS;
-  go = true; // move into loop when using a pin to trigger.
 }
 
 void loop()
@@ -59,6 +62,10 @@ void loop()
         currentStepDelay = RAMP_SLOW_STEP_DELAY;
     }
     dir = !dir;
+  }
+  else
+  {
+    go = digitalRead(buttonPin) == LOW;
   }
   delay(1);
 }
