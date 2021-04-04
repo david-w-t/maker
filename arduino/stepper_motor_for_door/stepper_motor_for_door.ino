@@ -5,10 +5,10 @@
 
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
-const int RAMP_SLOW_STEP_DELAY = 600; // ms
-const int RAMP_DELAY_DELTA = 30; // increment/decrement step delay
-const int TOTAL_FULL_ROTATIONS = 3; // whole number of rotations
-const int REMAINDER_STEPS = 16 * 64; // currently set for half rotation
+const int RAMP_SLOW_STEP_DELAY = 200; // ms
+const int RAMP_DELAY_DELTA = 4; // increment/decrement step delay
+const int TOTAL_FULL_ROTATIONS = 2; // whole number of rotations
+const int REMAINDER_STEPS = 16; // currently set for half rotation
 
 // button pin
 int buttonPin = 12;
@@ -30,7 +30,7 @@ void setup()
     pinMode(outPorts[i], OUTPUT);
   }
   nStepsInRamp = (RAMP_SLOW_STEP_DELAY - NORMAL_STEP_DELAY) / RAMP_DELAY_DELTA + 1;
-  maxSteps = TOTAL_FULL_ROTATIONS * 32 * 64 + REMAINDER_STEPS;
+  maxSteps = (TOTAL_FULL_ROTATIONS * 32 + REMAINDER_STEPS) * 64L;
 }
 
 void loop()
@@ -48,6 +48,7 @@ void loop()
       if (currentStepDelay < NORMAL_STEP_DELAY)
         currentStepDelay = NORMAL_STEP_DELAY;
     }
+    currentStepDelay = NORMAL_STEP_DELAY;
     for (; i < maxSteps - nStepsInRamp; ++i)
     {
       moveOneStep(dir);
@@ -68,23 +69,6 @@ void loop()
     go = digitalRead(buttonPin) == LOW;
   }
   delay(1);
-}
-
-void fullRotations(bool dir, int count, byte ms)
-{
-  for (int i = 0; i < count; ++i)
-  {
-    moveSteps(dir, 32 * 64, ms);
-  }
-}
-
-void moveSteps(bool dir, int steps, byte ms)
-{
-  for (int i = 0; i < steps; ++i)
-  {
-    moveOneStep(dir); // Rotate a step
-    delay(ms);        // Control the speed
-  }
 }
 
 // rotate one step
