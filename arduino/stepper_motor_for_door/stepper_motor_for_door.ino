@@ -29,7 +29,6 @@ void setup()
   {
     pinMode(outPorts[i], OUTPUT);
   }
-  nStepsInRamp = (RAMP_SLOW_STEP_DELAY - NORMAL_STEP_DELAY) / RAMP_DELAY_DELTA + 1;
   maxSteps = (TOTAL_FULL_ROTATIONS * 32 + REMAINDER_STEPS) * 64L;
 }
 
@@ -37,6 +36,7 @@ void loop()
 {
   if (go)
   {
+    nStepsInRamp = (RAMP_SLOW_STEP_DELAY - NORMAL_STEP_DELAY) / RAMP_DELAY_DELTA + 1;
     go = false;
     long i = 0;
     currentStepDelay = RAMP_SLOW_STEP_DELAY;
