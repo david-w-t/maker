@@ -3,6 +3,15 @@
   modified from freenove tutorial 18
 */
 
+/***
+// this wifi_local.h file has the two following lines in it:
+const char* WIFI_SSD = "";
+const char* WIFI_PASSWORD = "";
+// but provide the ssd and password for your wifi.
+***/
+#include "wifi_secrets.h"
+#include <WiFiNINA.h>
+
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
 const int RAMP_SLOW_STEP_DELAY = 200; // ms
@@ -21,12 +30,14 @@ int currentStepDelay = RAMP_SLOW_STEP_DELAY;
 long nStepsInRamp = 0;
 long maxSteps = 0;
 long iStep = 0;
+WiFiClient client;
+int status = WL_IDLE_STATUS;
 
 void setup()
 {
   if (DO_LOGGING)
   {
-    Serial.begin(115200);
+    Serial.begin(9600);
   }
   // set button pin to input
   pinMode(buttonPin, INPUT);
@@ -40,6 +51,7 @@ void setup()
   if (nStepsInRamp > maxSteps / 2)
     nStepsInRamp = maxSteps / 2;
   logInitialState();
+  connectToWifi();
 }
 
 void loop()
@@ -79,6 +91,42 @@ void logState()
     Serial.println(iStep);
     Serial.print("currentStepDelay: ");
     Serial.println(currentStepDelay);
+  }
+}
+
+void connectToWifi()
+{
+  printFirmwareStatus();
+  while (status != WL_CONNECTED)
+  {
+    status = WiFi.begin(WIFI_SSD, WIFI_PASSWORD);
+    delay(10000);
+  }
+  printWifiStatus();
+}
+
+void printFirmwareStatus()
+{
+  if (DO_LOGGING)
+  {
+    String fv = WiFi.firmwareVersion();
+    Serial.println(String("wifi firmware version: ") + fv);
+    Serial.println(String("latest firmware: ") + WIFI_FIRMWARE_LATEST_VERSION);
+    if (fv < WIFI_FIRMWARE_LATEST_VERSION)
+    {
+      Serial.println("Need to upgrade.");
+    }
+  }
+}
+
+void printWifiStatus()
+{
+  if (DO_LOGGING)
+  {
+    Serial.println(String("SSID: ") + WiFi.SSID());
+    IPAddress ip = WiFi.localIP();
+    Serial.print("IP address: ");
+    Serial.println(ip);
   }
 }
 

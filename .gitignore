@@ -53,3 +53,6 @@ dkms.conf
 
 # Arduino IDE
 arduino/libraries/
+
+# sensitive data files
+*_secrets.h
