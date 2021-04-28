@@ -10,6 +10,7 @@ const char* WIFI_PASSWORD = "";
 // but provide the ssd and password for your wifi.
 ***/
 #include "wifi_secrets.h"
+//#include <SPI.h>
 #include <WiFiNINA.h>
 
 // settings that affect the speed, ramp up/down, etc.
@@ -30,8 +31,7 @@ int currentStepDelay = RAMP_SLOW_STEP_DELAY;
 long nStepsInRamp = 0;
 long maxSteps = 0;
 long iStep = 0;
-WiFiClient client;
-int status = WL_IDLE_STATUS;
+WiFiServer server(80);
 
 void setup()
 {
@@ -52,6 +52,7 @@ void setup()
     nStepsInRamp = maxSteps / 2;
   logInitialState();
   connectToWifi();
+  server.begin();
 }
 
 void loop()
@@ -59,6 +60,7 @@ void loop()
   if (go)
   {
     logState();
+    webClientActions();
     moveOneStep();
     delay(currentStepDelay);
     ++iStep;
@@ -67,6 +69,9 @@ void loop()
   checkGoStatus();
 }
 
+/*************************
+ * functions during setup
+ *************************/
 void logInitialState()
 {
   if (DO_LOGGING)
@@ -83,23 +88,13 @@ void logInitialState()
   }
 }
 
-void logState()
-{
-  if (DO_LOGGING)
-  {
-    Serial.print("iStep: ");
-    Serial.println(iStep);
-    Serial.print("currentStepDelay: ");
-    Serial.println(currentStepDelay);
-  }
-}
-
 void connectToWifi()
 {
   printFirmwareStatus();
-  while (status != WL_CONNECTED)
+  int wifiStatus = WL_IDLE_STATUS;
+  while (wifiStatus != WL_CONNECTED)
   {
-    status = WiFi.begin(WIFI_SSD, WIFI_PASSWORD);
+    wifiStatus = WiFi.begin(WIFI_SSD, WIFI_PASSWORD);
     delay(10000);
   }
   printWifiStatus();
@@ -127,7 +122,49 @@ void printWifiStatus()
     IPAddress ip = WiFi.localIP();
     Serial.print("IP address: ");
     Serial.println(ip);
+    long rssi = WiFi.RSSI();
+    Serial.println(String("signal strength: ") + rssi + String(" dBm"));
   }
+}
+
+/*************************
+ * functions during loop
+ *************************/
+void logState()
+{
+  if (DO_LOGGING)
+  {
+    Serial.print("iStep: ");
+    Serial.println(iStep);
+    Serial.print("currentStepDelay: ");
+    Serial.println(currentStepDelay);
+  }
+}
+
+// rotate one step
+void moveOneStep()
+{
+  // Use low 4 bits to indicate the state of port
+  static byte out = 0x01;
+  // Decide the shift direction according to the rotation direction
+  if (dir)
+  { // ring shift left
+    out != 0x08 ? out = out << 1 : out = 0x01;
+  }
+  else
+  { // ring shift right
+    out != 0x01 ? out = out >> 1 : out = 0x08;
+  }
+  // Output singal to each port
+  for (int i = 0; i < 4; ++i)
+  {
+    digitalWrite(outPorts[i], (out & (0x01 << i)) ? HIGH : LOW);
+  }
+}
+
+void webClientActions()
+{
+  WiFiClient client = server.available();
 }
 
 // is it ok to rotate the motor?
@@ -171,26 +208,5 @@ void adjustStepDelay()
   else
   {
     currentStepDelay += RAMP_DELAY_DELTA;
-  }
-}
-
-// rotate one step
-void moveOneStep()
-{
-  // Use low 4 bits to indicate the state of port
-  static byte out = 0x01;
-  // Decide the shift direction according to the rotation direction
-  if (dir)
-  { // ring shift left
-    out != 0x08 ? out = out << 1 : out = 0x01;
-  }
-  else
-  { // ring shift right
-    out != 0x01 ? out = out >> 1 : out = 0x08;
-  }
-  // Output singal to each port
-  for (int i = 0; i < 4; ++i)
-  {
-    digitalWrite(outPorts[i], (out & (0x01 << i)) ? HIGH : LOW);
   }
 }
