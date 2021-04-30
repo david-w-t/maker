@@ -28,6 +28,8 @@ int buttonPin = 12;
 int outPorts[] = {11, 10, 9, 8};
 bool dir = true; // true for cw, false for ccw.
 bool go = false;
+bool startTheMotor = false;
+bool stopTheMotor = false;
 int currentStepDelay = RAMP_SLOW_STEP_DELAY;
 long nStepsInRamp = 0;
 long maxSteps = 0;
@@ -39,7 +41,7 @@ void setup()
 {
   if (DO_LOGGING)
   {
-    Serial.begin(9600);
+    Serial.begin(115200);
   }
   setupRest();
   // set button pin to input
@@ -62,16 +64,16 @@ void loop()
 {
   if (go)
   {
-    logState();
-    //webClientActions();
+    if (iStep % 5 == 0)
+      logState();
     moveOneStep();
     delay(currentStepDelay);
     ++iStep;
     adjustStepDelay();
   }
+  WiFiClient client = server.available();
+  rest.handle(client);
   checkGoStatus();
-  //WiFiClient client = server.available();
-  //rest.handle(client);
 }
 
 /*************************
@@ -99,9 +101,14 @@ void logInitialState()
 
 void setupRest()
 {
-  //rest.variable("runMotor", &go);
-  //rest.variable("cwDirection", &dir);
-  //rest.function("switchDirection", switchDirection);
+  rest.variable("runMotor", &go);
+  rest.variable("cwDirection", &dir);
+  rest.variable("iStep", &iStep);
+  rest.variable("nStepsInRamp", &nStepsInRamp);
+  rest.variable("maxSteps", &maxSteps);
+  rest.function("switchDirection", switchDirection);
+  rest.function("startMotor", startMotor);
+  rest.function("stopMotor", stopMotor);
 
   // Give name and ID to device (ID should be 6 characters long)
   rest.set_id("dr0001");
@@ -182,19 +189,16 @@ void moveOneStep()
   }
 }
 
-//void webClientActions()
-//{
-//  WiFiClient client = server.available();
-//}
-
 // is it ok to rotate the motor?
 void checkGoStatus()
 {
   if (go)
   {
-    go = iStep < maxSteps;
+    go = !stopTheMotor && iStep < maxSteps;
     if (!go)
     {
+      if (iStep % 5 != 0)
+        logState();
       if (DO_LOGGING)
         Serial.println("Stopping.");
       switchDirection();
@@ -202,10 +206,12 @@ void checkGoStatus()
   }
   else
   {
-    go = digitalRead(buttonPin) == LOW;
+    go = startTheMotor || digitalRead(buttonPin) == LOW;
     if (go && DO_LOGGING)
       Serial.println("Starting.");
   }
+  startTheMotor = false;
+  stopTheMotor = false;
 }
 
 bool switchDirection()
@@ -230,4 +236,16 @@ void adjustStepDelay()
   {
     currentStepDelay += RAMP_DELAY_DELTA;
   }
+}
+
+bool startMotor()
+{
+  startTheMotor = true;
+  return go;
+}
+
+bool stopMotor()
+{
+  stopTheMotor = true;
+  return go;
 }
