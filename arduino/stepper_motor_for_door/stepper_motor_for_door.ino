@@ -12,6 +12,7 @@ const char* WIFI_PASSWORD = "";
 #include "wifi_secrets.h"
 //#include <SPI.h>
 #include <WiFiNINA.h>
+#include <aREST.h>
 
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
@@ -32,6 +33,7 @@ long nStepsInRamp = 0;
 long maxSteps = 0;
 long iStep = 0;
 WiFiServer server(80);
+aREST rest = aREST();
 
 void setup()
 {
@@ -39,6 +41,7 @@ void setup()
   {
     Serial.begin(9600);
   }
+  setupRest();
   // set button pin to input
   pinMode(buttonPin, INPUT);
   // set pins to output
@@ -60,13 +63,15 @@ void loop()
   if (go)
   {
     logState();
-    webClientActions();
+    //webClientActions();
     moveOneStep();
     delay(currentStepDelay);
     ++iStep;
     adjustStepDelay();
   }
   checkGoStatus();
+  //WiFiClient client = server.available();
+  //rest.handle(client);
 }
 
 /*************************
@@ -85,7 +90,22 @@ void logInitialState()
       Serial.println("cw");
     else
       Serial.println("ccw");
+    if (go)
+      Serial.println("motor running");
+    else
+      Serial.println("motor stopped");
   }
+}
+
+void setupRest()
+{
+  //rest.variable("runMotor", &go);
+  //rest.variable("cwDirection", &dir);
+  //rest.function("switchDirection", switchDirection);
+
+  // Give name and ID to device (ID should be 6 characters long)
+  rest.set_id("dr0001");
+  rest.set_name("chicken_door");
 }
 
 void connectToWifi()
@@ -162,10 +182,10 @@ void moveOneStep()
   }
 }
 
-void webClientActions()
-{
-  WiFiClient client = server.available();
-}
+//void webClientActions()
+//{
+//  WiFiClient client = server.available();
+//}
 
 // is it ok to rotate the motor?
 void checkGoStatus()
@@ -188,11 +208,12 @@ void checkGoStatus()
   }
 }
 
-void switchDirection()
+bool switchDirection()
 {
   dir = !dir;
   iStep = 0;
   logInitialState();
+  return dir;
 }
 
 void adjustStepDelay()

@@ -33,7 +33,7 @@ int ledControl(String command);
 void setup() {
 
   // Start Serial
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   // Init variables and expose them to REST API
   temperature = 24;
@@ -85,7 +85,6 @@ void loop() {
   // listen for incoming clients
   WiFiClient client = server.available();
   rest.handle(client);
-
 }
 
 // Custom function accessible by the API
