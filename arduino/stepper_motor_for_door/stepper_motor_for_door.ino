@@ -10,6 +10,7 @@ const char* WIFI_PASSWORD = "";
 // but provide the ssd and password for your wifi.
 ***/
 #include "wifi_secrets.h"
+#include "arest_secrets.h"
 //#include <SPI.h>
 #include <WiFiNINA.h>
 #include <aREST.h>
@@ -111,8 +112,8 @@ void setupRest()
   rest.function("stopMotor", stopMotor);
 
   // Give name and ID to device (ID should be 6 characters long)
-  rest.set_id("dr0001");
-  rest.set_name("chicken_door");
+  rest.set_id(AREST_DEVICE_ID);
+  rest.set_name(AREST_DEVICE_NAME);
 }
 
 void connectToWifi()
