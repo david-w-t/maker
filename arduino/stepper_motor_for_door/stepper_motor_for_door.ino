@@ -4,10 +4,15 @@
 */
 
 /***
-// this wifi_local.h file has the two following lines in it:
+// the wifi_secrets.h file has the two following lines in it:
 const char* WIFI_SSD = "";
 const char* WIFI_PASSWORD = "";
 // but provide the ssd and password for your wifi.
+***
+// the arest_secrets.h file has the two following lines in it:
+const char* AREST_DEVICE_ID = "";
+const char* AREST_DEVICE_NAME = "";
+// but provide the aREST device id and name.
 ***/
 #include "wifi_secrets.h"
 #include "arest_secrets.h"
@@ -18,7 +23,7 @@ const char* WIFI_PASSWORD = "";
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
 const int RAMP_SLOW_STEP_DELAY = 200; // ms
-const int RAMP_DELAY_DELTA = 4; // increment/decrement step delay
+const int RAMP_DELAY_DELTA = 20; // increment/decrement step delay
 const int TOTAL_FULL_ROTATIONS = 2; // whole number of rotations
 const int REMAINDER_STEPS = 16; // currently set for half rotation
 const bool DO_LOGGING = true;
@@ -65,7 +70,7 @@ void loop()
 {
   if (go)
   {
-    if (iStep % 5 == 0)
+    if (iStep % 10 == 0)
       logState();
     moveOneStep();
     delay(currentStepDelay);
@@ -109,6 +114,8 @@ void setupRest()
   rest.variable("maxSteps", &maxSteps);
   rest.function("switchDirection", switchDirection);
   rest.function("startMotor", startMotor);
+  rest.function("runMotorCw", runMotorCw);
+  rest.function("runMotorCcw", runMotorCcw);
   rest.function("stopMotor", stopMotor);
 
   // Give name and ID to device (ID should be 6 characters long)
@@ -177,11 +184,11 @@ void moveOneStep()
   // Decide the shift direction according to the rotation direction
   if (dir)
   { // ring shift left
-    out != 0x08 ? out = out << 1 : out = 0x01;
+    out = out != 0x08 ? out << 1 : 0x01;
   }
   else
   { // ring shift right
-    out != 0x01 ? out = out >> 1 : out = 0x08;
+    out = out != 0x01 ? out >> 1 : 0x08;
   }
   // Output singal to each port
   for (int i = 0; i < 4; ++i)
@@ -198,7 +205,7 @@ void checkGoStatus()
     go = !stopTheMotor && iStep < maxSteps;
     if (!go)
     {
-      if (iStep % 5 != 0)
+      if (iStep % 10 != 0)
         logState();
       if (DO_LOGGING)
         Serial.println("Stopping.");
@@ -241,6 +248,24 @@ void adjustStepDelay()
 
 bool startMotor()
 {
+  startTheMotor = true;
+  return go;
+}
+
+bool runMotorCw()
+{
+  dir = true;
+  iStep = 0;
+  logInitialState();
+  startTheMotor = true;
+  return go;
+}
+
+bool runMotorCcw()
+{
+  dir = false;
+  iStep = 0;
+  logInitialState();
   startTheMotor = true;
   return go;
 }
