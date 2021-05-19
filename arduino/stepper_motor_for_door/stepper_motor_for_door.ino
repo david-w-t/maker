@@ -20,6 +20,16 @@ const char* AREST_DEVICE_NAME = "";
 #include <WiFiNINA.h>
 #include <aREST.h>
 
+enum MotorState
+{
+  STATE_INIT,
+  STATE_IDLE,
+  STATE_START,
+  STATE_STOP,
+  STATE_RUNNING,
+  STATE_RESET
+};
+
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
 const int RAMP_SLOW_STEP_DELAY = 200; // ms
@@ -32,14 +42,16 @@ const bool DO_LOGGING = true;
 int buttonPin = 12;
 // Connect the port of the stepper motor driver
 int outPorts[] = {11, 10, 9, 8};
+MotorState state = STATE_INIT;
 bool dir = true; // true for cw, false for ccw.
-bool go = false;
-bool startTheMotor = false;
-bool stopTheMotor = false;
+bool wifiFailed = false;
+bool go = false; // FIXME: remove
 int currentStepDelay = RAMP_SLOW_STEP_DELAY;
 long nStepsInRamp = 0;
 long maxSteps = 0;
 long iStep = 0;
+unsigned long loopCounter = 0;
+unsigned long lastTimeMotorMoved = 0;
 WiFiServer server(80);
 aREST rest = aREST();
 
@@ -49,6 +61,7 @@ void setup()
   {
     Serial.begin(115200);
   }
+  state = STATE_INIT;
   setupRest();
   // set button pin to input
   pinMode(buttonPin, INPUT);
@@ -61,25 +74,47 @@ void setup()
   nStepsInRamp = (RAMP_SLOW_STEP_DELAY - NORMAL_STEP_DELAY) / RAMP_DELAY_DELTA + 1;
   if (nStepsInRamp > maxSteps / 2)
     nStepsInRamp = maxSteps / 2;
-  logInitialState();
   connectToWifi();
   server.begin();
 }
 
 void loop()
 {
-  if (go)
+  ++loopCounter;
+  logState();
+  switch (state)
   {
-    if (iStep % 10 == 0)
-      logState();
-    moveOneStep();
-    delay(currentStepDelay);
-    ++iStep;
-    adjustStepDelay();
+    case STATE_INIT:
+      logInitialState();
+      state = STATE_IDLE;
+      break;
+    case STATE_IDLE:
+      if (loopCounter % 10000 == 0)
+      {
+        wifiFailed = WiFi.status() != WL_CONNECTED;
+        if (digitalRead(buttonPin) == LOW)
+          state = STATE_START;
+      }
+      break;
+    case STATE_START:
+      logInitialState();
+      state = STATE_RUNNING;
+      break;
+    case STATE_STOP:
+      state = STATE_IDLE;
+      break;
+    case STATE_RUNNING:
+      runningMotor();
+      break;
+    case STATE_RESET:
+      break;
+  }
+  if (wifiFailed && loopCounter % 100000 == 0)
+  {
+    connectToWifi();
   }
   WiFiClient client = server.available();
   rest.handle(client);
-  checkGoStatus();
 }
 
 /*************************
@@ -98,24 +133,19 @@ void logInitialState()
       Serial.println("cw");
     else
       Serial.println("ccw");
-    if (go)
-      Serial.println("motor running");
-    else
-      Serial.println("motor stopped");
   }
 }
 
 void setupRest()
 {
-  rest.variable("runMotor", &go);
+  rest.variable("state", &state);
   rest.variable("cwDirection", &dir);
   rest.variable("iStep", &iStep);
   rest.variable("nStepsInRamp", &nStepsInRamp);
   rest.variable("maxSteps", &maxSteps);
-  rest.function("switchDirection", switchDirection);
-  rest.function("startMotor", startMotor);
   rest.function("runMotorCw", runMotorCw);
   rest.function("runMotorCcw", runMotorCcw);
+  rest.function("resumeMotor", resumeMotor);
   rest.function("stopMotor", stopMotor);
 
   // Give name and ID to device (ID should be 6 characters long)
@@ -125,13 +155,29 @@ void setupRest()
 
 void connectToWifi()
 {
-  printFirmwareStatus();
-  int wifiStatus = WL_IDLE_STATUS;
-  while (wifiStatus != WL_CONNECTED)
+  if (state == STATE_INIT)
+    printFirmwareStatus();
+  unsigned connectCount = 0;
+  int wifiStatus = wifiFailed ? WiFi.status() : WL_DISCONNECTED;
+  bool keepTrying = wifiStatus != WL_CONNECTED;
+  while (keepTrying && connectCount < 3)
   {
-    wifiStatus = WiFi.begin(WIFI_SSD, WIFI_PASSWORD);
-    delay(10000);
+    switch (wifiStatus)
+    {
+      case WL_CONNECTED:
+        keepTrying = false;
+        break;
+      case WL_IDLE_STATUS:
+        delay(1000);
+        wifiStatus = WiFi.status();
+        break;
+      default:
+        wifiStatus = WiFi.begin(WIFI_SSD, WIFI_PASSWORD);
+        ++connectCount;
+        break;
+    }
   }
+  wifiFailed = wifiStatus != WL_CONNECTED;
   printWifiStatus();
 }
 
@@ -140,8 +186,10 @@ void printFirmwareStatus()
   if (DO_LOGGING)
   {
     String fv = WiFi.firmwareVersion();
-    Serial.println(String("wifi firmware version: ") + fv);
-    Serial.println(String("latest firmware: ") + WIFI_FIRMWARE_LATEST_VERSION);
+    Serial.print("wifi firmware version: ");
+    Serial.println(fv);
+    Serial.print("latest firmware: ");
+    Serial.println(WIFI_FIRMWARE_LATEST_VERSION);
     if (fv < WIFI_FIRMWARE_LATEST_VERSION)
     {
       Serial.println("Need to upgrade.");
@@ -153,12 +201,37 @@ void printWifiStatus()
 {
   if (DO_LOGGING)
   {
-    Serial.println(String("SSID: ") + WiFi.SSID());
+    switch (WiFi.status())
+    {
+      case WL_CONNECTED:
+        Serial.println("WiFi connected.");
+        break;
+      case WL_NO_MODULE:
+        Serial.println("No WiFi hardware found.");
+        return;
+      case WL_NO_SSID_AVAIL:
+        Serial.print(WIFI_SSD);
+        Serial.println(" WiFi network not available.");
+        return;
+      case WL_CONNECT_FAILED:
+        Serial.println("WiFi connection failed.");
+        return;
+      case WL_CONNECTION_LOST:
+        Serial.println("WiFi connection lost.");
+        return;
+      case WL_DISCONNECTED:
+        Serial.println("WiFi disconnected.");
+        return;
+    }
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
     IPAddress ip = WiFi.localIP();
     Serial.print("IP address: ");
     Serial.println(ip);
     long rssi = WiFi.RSSI();
-    Serial.println(String("signal strength: ") + rssi + String(" dBm"));
+    Serial.print("signal strength: ");
+    Serial.print(rssi);
+    Serial.println(" dBm");
   }
 }
 
@@ -169,11 +242,56 @@ void logState()
 {
   if (DO_LOGGING)
   {
-    Serial.print("iStep: ");
-    Serial.println(iStep);
-    Serial.print("currentStepDelay: ");
-    Serial.println(currentStepDelay);
+    static long lastloggedStep = -1;
+    bool okToPrint = true;
+    const char* stateStr = "unknown";
+    switch (state)
+    {
+      case STATE_INIT:
+        stateStr = "initializing";
+        break;
+      case STATE_IDLE:
+        okToPrint = loopCounter % 100000 == 0;
+        stateStr = "idle";
+        break;
+      case STATE_START:
+        stateStr = "starting";
+        break;
+      case STATE_STOP:
+        stateStr = "stopping";
+        break;
+      case STATE_RUNNING:
+        okToPrint = iStep > lastloggedStep && iStep % 10 == 0;
+        lastloggedStep = iStep;
+        if (dir)
+          stateStr = "running cw";
+        else
+          stateStr = "running ccw";
+        break;
+      case STATE_RESET:
+        stateStr = "reset";
+        break;
+    }
+    if (okToPrint)
+    {
+      Serial.print("state: ");
+      Serial.println(stateStr);
+      Serial.print("iStep: ");
+      Serial.println(iStep);
+      Serial.print("currentStepDelay: ");
+      Serial.println(currentStepDelay);
+    }
   }
+}
+
+void runningMotor()
+{
+  if (micros() - lastTimeMotorMoved < currentStepDelay * 1000L)
+    return;
+  if (iStep % 10 == 0)
+    logState();
+  moveOneStep();
+  adjustStepDelay();
 }
 
 // rotate one step
@@ -195,39 +313,10 @@ void moveOneStep()
   {
     digitalWrite(outPorts[i], (out & (0x01 << i)) ? HIGH : LOW);
   }
-}
-
-// is it ok to rotate the motor?
-void checkGoStatus()
-{
-  if (go)
-  {
-    go = !stopTheMotor && iStep < maxSteps;
-    if (!go)
-    {
-      if (iStep % 10 != 0)
-        logState();
-      if (DO_LOGGING)
-        Serial.println("Stopping.");
-      switchDirection();
-    }
-  }
-  else
-  {
-    go = startTheMotor || digitalRead(buttonPin) == LOW;
-    if (go && DO_LOGGING)
-      Serial.println("Starting.");
-  }
-  startTheMotor = false;
-  stopTheMotor = false;
-}
-
-bool switchDirection()
-{
-  dir = !dir;
-  iStep = 0;
-  logInitialState();
-  return dir;
+  ++iStep;
+  if (iStep >= maxSteps)
+    state = STATE_STOP;
+  lastTimeMotorMoved = micros();
 }
 
 void adjustStepDelay()
@@ -246,32 +335,30 @@ void adjustStepDelay()
   }
 }
 
-bool startMotor()
+int resumeMotor(String command)
 {
-  startTheMotor = true;
-  return go;
+  state = STATE_START;
+  return 0;
 }
 
-bool runMotorCw()
+int runMotorCw(String command)
 {
   dir = true;
   iStep = 0;
-  logInitialState();
-  startTheMotor = true;
-  return go;
+  state = STATE_START;
+  return 0;
 }
 
-bool runMotorCcw()
+int runMotorCcw(String command)
 {
   dir = false;
   iStep = 0;
-  logInitialState();
-  startTheMotor = true;
-  return go;
+  state = STATE_START;
+  return 0;
 }
 
-bool stopMotor()
+int stopMotor(String command)
 {
-  stopTheMotor = true;
-  return go;
+  state = STATE_STOP;
+  return 0;
 }
