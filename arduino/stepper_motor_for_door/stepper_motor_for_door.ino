@@ -338,7 +338,7 @@ void adjustStepDelay()
 int resumeMotor(String command)
 {
   state = STATE_START;
-  return 0;
+  return state;
 }
 
 int runMotorCw(String command)
@@ -346,7 +346,7 @@ int runMotorCw(String command)
   dir = true;
   iStep = 0;
   state = STATE_START;
-  return 0;
+  return state;
 }
 
 int runMotorCcw(String command)
@@ -354,11 +354,11 @@ int runMotorCcw(String command)
   dir = false;
   iStep = 0;
   state = STATE_START;
-  return 0;
+  return state;
 }
 
 int stopMotor(String command)
 {
   state = STATE_STOP;
-  return 0;
+  return state;
 }
