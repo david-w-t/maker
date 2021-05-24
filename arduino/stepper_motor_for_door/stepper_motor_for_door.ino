@@ -3,6 +3,9 @@
   modified from freenove tutorial 18
 */
 
+// uncomment the following to enable aRest:
+#define USE_AREST
+
 /***
 // the wifi_secrets.h file has the two following lines in it:
 const char* WIFI_SSD = "";
@@ -15,10 +18,12 @@ const char* AREST_DEVICE_NAME = "";
 // but provide the aREST device id and name.
 ***/
 #include "wifi_secrets.h"
-#include "arest_secrets.h"
 //#include <SPI.h>
 #include <WiFiNINA.h>
+#ifdef USE_AREST
+#include "arest_secrets.h"
 #include <aREST.h>
+#endif // USE_AREST
 
 enum MotorState
 {
@@ -52,8 +57,10 @@ long maxSteps = 0;
 long iStep = 0;
 unsigned long loopCounter = 0;
 unsigned long lastTimeMotorMoved = 0;
+#ifdef USE_AREST
 WiFiServer server(80);
 aREST rest = aREST();
+#endif // USE_AREST
 
 void setup()
 {
@@ -62,7 +69,6 @@ void setup()
     Serial.begin(115200);
   }
   state = STATE_INIT;
-  setupRest();
   // set button pin to input
   pinMode(buttonPin, INPUT);
   // set pins to output
@@ -75,7 +81,10 @@ void setup()
   if (nStepsInRamp > maxSteps / 2)
     nStepsInRamp = maxSteps / 2;
   connectToWifi();
+#ifdef USE_AREST
+  setupRest();
   server.begin();
+#endif // USE_AREST
 }
 
 void loop()
@@ -113,8 +122,10 @@ void loop()
   {
     connectToWifi();
   }
+#ifdef USE_AREST
   WiFiClient client = server.available();
   rest.handle(client);
+#endif // USE_AREST
 }
 
 /*************************
@@ -136,6 +147,7 @@ void logInitialState()
   }
 }
 
+#ifdef USE_AREST
 void setupRest()
 {
   rest.variable("state", &state);
@@ -152,6 +164,7 @@ void setupRest()
   rest.set_id(AREST_DEVICE_ID);
   rest.set_name(AREST_DEVICE_NAME);
 }
+#endif // USE_AREST
 
 void connectToWifi()
 {
