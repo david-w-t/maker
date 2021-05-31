@@ -6,7 +6,11 @@
 // uncomment the following to enable aRest:
 #define USE_AREST
 // uncomment the following to enable MQTT:
-//#define USE_MQTT
+#define USE_MQTT
+
+#define DO_LOGGING
+#define LOG_TO_SERIAL true
+#define LOG_TO_MQTT okToPublishToMqtt
 
 /***
 // the wifi_secrets.h file has the two following lines in it:
@@ -18,7 +22,7 @@ const char* WIFI_PASSWORD = "";
 const char* MQTT_CLIENT_ID = "arduino-motor-control";
 const char* MQTT_BROKER_HOST = "";
 const int MQTT_PORT = 1883;
-const char* MQTT_TOPIC = "motorControl";
+#define MQTT_TOPIC_BASE "motorControl/"
 // but provide the TODO
 ***
 // the arest_secrets.h file has the two following lines in it:
@@ -47,10 +51,6 @@ enum MotorState
   STATE_RUNNING,
   STATE_RESET
 };
-
-#define DO_LOGGING
-#define LOG_TO_SERIAL true
-#define LOG_TO_MQTT okToPublishToMqtt
 
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
@@ -87,16 +87,6 @@ aREST rest = aREST();
 
 #ifdef DO_LOGGING
 bool hasBegunPublishing = false;
-#ifdef USE_MQTT
-template<typename T>
-void publish(T t)
-{
-  String s(t);
-  mqttClient.
-}
-#else
-#define publish(x)
-#endif
 
 template <typename T>
 void println(T t)
@@ -106,11 +96,13 @@ void println(T t)
 #ifdef USE_MQTT
   if (LOG_TO_MQTT)
   {
-    if (hasBegunPublishing)
+    if (!hasBegunPublishing)
     {
-      hasBegunPublishing = false;
-      mqttClient.endPublish();
+      mqttClient.beginPublish(MQTT_TOPIC_BASE "log", 0, false);
     }
+    mqttClient.println(t);
+    hasBegunPublishing = false;
+    mqttClient.endPublish();
   }
 #endif
 }
@@ -120,7 +112,6 @@ void println(T t, Args... args)
   if (LOG_TO_SERIAL)
   {
     Serial.print(t);
-    println(args...);
   }
 #ifdef USE_MQTT
   if (LOG_TO_MQTT)
@@ -128,14 +119,15 @@ void println(T t, Args... args)
     if (!hasBegunPublishing)
     {
       hasBegunPublishing = true;
-      //mqttClient.
+      mqttClient.beginPublish(MQTT_TOPIC_BASE "log", 0, false);
     }
+    mqttClient.print(t);
   }
 #endif
+  println(args...);
 }
 #else
 #define println(x, ...)
-#define write(x, i)
 #endif
 
 void setup()
@@ -467,25 +459,26 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
 
 void mqttReconnect()
 {
+  println("MQTT client state: ", mqttClient.state());
   okToPublishToMqtt = mqttClient.connect(MQTT_CLIENT_ID);
   if (okToPublishToMqtt)
   {
     println("MQTT connected as ", MQTT_CLIENT_ID);
-    boolean success = mqttClient.subscribe(MQTT_TOPIC);
+    boolean success = mqttClient.subscribe(MQTT_TOPIC_BASE "command");
     if (success)
     {
-      println("MQTT subscribed to topic ", MQTT_TOPIC);
+      println("MQTT subscribed to topic ", MQTT_TOPIC_BASE "command");
     }
     else
     {
       okToPublishToMqtt = false;
       mqttClient.disconnect(); // to retry later
-      println("MQTT failed to subscribe to ", MQTT_TOPIC);
+      println("MQTT failed to subscribe to ", MQTT_TOPIC_BASE "command");
     }
   }
   else
   {
-    println("MQTT failed to connect: ", mqttClient.state());
+    println("MQTT failed to connect, state: ", mqttClient.state());
   }
 }
 #endif // USE_MQTT
