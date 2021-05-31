@@ -5,12 +5,21 @@
 
 // uncomment the following to enable aRest:
 #define USE_AREST
+// uncomment the following to enable MQTT:
+//#define USE_MQTT
 
 /***
 // the wifi_secrets.h file has the two following lines in it:
 const char* WIFI_SSD = "";
 const char* WIFI_PASSWORD = "";
 // but provide the ssd and password for your wifi.
+***
+// the mqtt_secrets.h file has the three following lines in it:
+const char* MQTT_CLIENT_ID = "arduino-motor-control";
+const char* MQTT_BROKER_HOST = "";
+const int MQTT_PORT = 1883;
+const char* MQTT_TOPIC = "motorControl";
+// but provide the TODO
 ***
 // the arest_secrets.h file has the two following lines in it:
 const char* AREST_DEVICE_ID = "";
@@ -20,6 +29,10 @@ const char* AREST_DEVICE_NAME = "";
 #include "wifi_secrets.h"
 //#include <SPI.h>
 #include <WiFiNINA.h>
+#ifdef USE_MQTT
+#include "mqtt_secrets.h"
+#include <PubSubClient.h>
+#endif // USE_MQTT
 #ifdef USE_AREST
 #include "arest_secrets.h"
 #include <aREST.h>
@@ -35,13 +48,16 @@ enum MotorState
   STATE_RESET
 };
 
+#define DO_LOGGING
+#define LOG_TO_SERIAL true
+#define LOG_TO_MQTT okToPublishToMqtt
+
 // settings that affect the speed, ramp up/down, etc.
 const int NORMAL_STEP_DELAY = 2; // ms
 const int RAMP_SLOW_STEP_DELAY = 200; // ms
 const int RAMP_DELAY_DELTA = 20; // increment/decrement step delay
 const int TOTAL_FULL_ROTATIONS = 2; // whole number of rotations
 const int REMAINDER_STEPS = 16; // currently set for half rotation
-const bool DO_LOGGING = true;
 
 // button pin
 int buttonPin = 12;
@@ -57,14 +73,74 @@ long maxSteps = 0;
 long iStep = 0;
 unsigned long loopCounter = 0;
 unsigned long lastTimeMotorMoved = 0;
+bool okToPublishToMqtt = false;
+
+#ifdef USE_MQTT
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+WiFiClient wifiClient;
+PubSubClient mqttClient(MQTT_BROKER_HOST, MQTT_PORT, mqttCallback, wifiClient);
+#endif // USE_MQTT
 #ifdef USE_AREST
-WiFiServer server(80);
+WiFiServer httpServer(80);
 aREST rest = aREST();
 #endif // USE_AREST
 
+#ifdef DO_LOGGING
+bool hasBegunPublishing = false;
+#ifdef USE_MQTT
+template<typename T>
+void publish(T t)
+{
+  String s(t);
+  mqttClient.
+}
+#else
+#define publish(x)
+#endif
+
+template <typename T>
+void println(T t)
+{
+  if (LOG_TO_SERIAL)
+    Serial.println(t);
+#ifdef USE_MQTT
+  if (LOG_TO_MQTT)
+  {
+    if (hasBegunPublishing)
+    {
+      hasBegunPublishing = false;
+      mqttClient.endPublish();
+    }
+  }
+#endif
+}
+template <typename T, typename... Args>
+void println(T t, Args... args)
+{
+  if (LOG_TO_SERIAL)
+  {
+    Serial.print(t);
+    println(args...);
+  }
+#ifdef USE_MQTT
+  if (LOG_TO_MQTT)
+  {
+    if (!hasBegunPublishing)
+    {
+      hasBegunPublishing = true;
+      //mqttClient.
+    }
+  }
+#endif
+}
+#else
+#define println(x, ...)
+#define write(x, i)
+#endif
+
 void setup()
 {
-  if (DO_LOGGING)
+  if (LOG_TO_SERIAL)
   {
     Serial.begin(115200);
   }
@@ -81,9 +157,12 @@ void setup()
   if (nStepsInRamp > maxSteps / 2)
     nStepsInRamp = maxSteps / 2;
   connectToWifi();
+#ifdef USE_MQTT
+  setupMqtt();
+#endif // USE_MQTT
 #ifdef USE_AREST
   setupRest();
-  server.begin();
+  httpServer.begin();
 #endif // USE_AREST
 }
 
@@ -122,30 +201,26 @@ void loop()
   {
     connectToWifi();
   }
+#ifdef USE_MQTT
+  bool success = mqttClient.loop();
+  if (!success && loopCounter % 10000 == 1)
+    mqttReconnect();
+#endif // USE_MQTT
 #ifdef USE_AREST
-  WiFiClient client = server.available();
-  rest.handle(client);
+  WiFiClient httpClient = httpServer.available();
+  rest.handle(httpClient);
 #endif // USE_AREST
 }
 
 /*************************
  * functions during setup
  *************************/
-void logInitialState()
+#ifdef USE_MQTT
+void setupMqtt()
 {
-  if (DO_LOGGING)
-  {
-    Serial.print("maxSteps: ");
-    Serial.println(maxSteps);
-    Serial.print("nStepsInRamp: ");
-    Serial.println(nStepsInRamp);
-    Serial.print("direction: ");
-    if (dir)
-      Serial.println("cw");
-    else
-      Serial.println("ccw");
-  }
+  mqttReconnect();
 }
+#endif // USE_MQTT
 
 #ifdef USE_AREST
 void setupRest()
@@ -194,109 +269,111 @@ void connectToWifi()
   printWifiStatus();
 }
 
+/*************************
+ * logging functions
+ *************************/
+void logInitialState()
+{
+#ifdef DO_LOGGING
+  println("maxSteps: ", maxSteps);
+  println("nStepsInRamp: ", nStepsInRamp);
+  if (dir)
+    println("direction: cw");
+  else
+    println("direction: ccw");
+#endif
+}
+
 void printFirmwareStatus()
 {
-  if (DO_LOGGING)
+#ifdef DO_LOGGING
+  String fv = WiFi.firmwareVersion();
+  println("wifi firmware version: ", fv);
+  println("latest firmware: ", WIFI_FIRMWARE_LATEST_VERSION);
+  if (fv < WIFI_FIRMWARE_LATEST_VERSION)
   {
-    String fv = WiFi.firmwareVersion();
-    Serial.print("wifi firmware version: ");
-    Serial.println(fv);
-    Serial.print("latest firmware: ");
-    Serial.println(WIFI_FIRMWARE_LATEST_VERSION);
-    if (fv < WIFI_FIRMWARE_LATEST_VERSION)
-    {
-      Serial.println("Need to upgrade.");
-    }
+    println("Need to upgrade.");
   }
+#endif
 }
 
 void printWifiStatus()
 {
-  if (DO_LOGGING)
+#ifdef DO_LOGGING
+  switch (WiFi.status())
   {
-    switch (WiFi.status())
-    {
-      case WL_CONNECTED:
-        Serial.println("WiFi connected.");
-        break;
-      case WL_NO_MODULE:
-        Serial.println("No WiFi hardware found.");
-        return;
-      case WL_NO_SSID_AVAIL:
-        Serial.print(WIFI_SSD);
-        Serial.println(" WiFi network not available.");
-        return;
-      case WL_CONNECT_FAILED:
-        Serial.println("WiFi connection failed.");
-        return;
-      case WL_CONNECTION_LOST:
-        Serial.println("WiFi connection lost.");
-        return;
-      case WL_DISCONNECTED:
-        Serial.println("WiFi disconnected.");
-        return;
-    }
-    Serial.print("SSID: ");
-    Serial.println(WiFi.SSID());
-    IPAddress ip = WiFi.localIP();
-    Serial.print("IP address: ");
-    Serial.println(ip);
-    long rssi = WiFi.RSSI();
-    Serial.print("signal strength: ");
-    Serial.print(rssi);
-    Serial.println(" dBm");
+    case WL_CONNECTED:
+      println("WiFi connected.");
+      break;
+    case WL_NO_MODULE:
+      println("No WiFi hardware found.");
+      return;
+    case WL_NO_SSID_AVAIL:
+      println(WIFI_SSD, " WiFi network not available.");
+      return;
+    case WL_CONNECT_FAILED:
+      println("WiFi connection failed.");
+      return;
+    case WL_CONNECTION_LOST:
+      println("WiFi connection lost.");
+      return;
+    case WL_DISCONNECTED:
+      println("WiFi disconnected.");
+      return;
   }
+  println("SSID: ", WiFi.SSID());
+  IPAddress ip = WiFi.localIP();
+  println("IP address: ", ip);
+  long rssi = WiFi.RSSI();
+  println("signal strength: ", rssi, " dBm");
+#endif
+}
+
+void logState()
+{
+#ifdef DO_LOGGING
+  static long lastloggedStep = -1;
+  bool okToPrint = true;
+  const char* stateStr = "unknown";
+  switch (state)
+  {
+    case STATE_INIT:
+      stateStr = "initializing";
+      break;
+    case STATE_IDLE:
+      okToPrint = loopCounter % 100000 == 0;
+      stateStr = "idle";
+      break;
+    case STATE_START:
+      stateStr = "starting";
+      break;
+    case STATE_STOP:
+      stateStr = "stopping";
+      break;
+    case STATE_RUNNING:
+      okToPrint = iStep > lastloggedStep && iStep % 10 == 0;
+      lastloggedStep = iStep;
+      if (dir)
+        stateStr = "running cw";
+      else
+        stateStr = "running ccw";
+      break;
+    case STATE_RESET:
+      stateStr = "reset";
+      break;
+  }
+  if (okToPrint)
+  {
+    println("state: ", stateStr);
+    println("iStep: ", iStep);
+    println("currentStepDelay: ", currentStepDelay);
+  }
+#endif
 }
 
 /*************************
- * functions during loop
+ * motor functions
  *************************/
-void logState()
-{
-  if (DO_LOGGING)
-  {
-    static long lastloggedStep = -1;
-    bool okToPrint = true;
-    const char* stateStr = "unknown";
-    switch (state)
-    {
-      case STATE_INIT:
-        stateStr = "initializing";
-        break;
-      case STATE_IDLE:
-        okToPrint = loopCounter % 100000 == 0;
-        stateStr = "idle";
-        break;
-      case STATE_START:
-        stateStr = "starting";
-        break;
-      case STATE_STOP:
-        stateStr = "stopping";
-        break;
-      case STATE_RUNNING:
-        okToPrint = iStep > lastloggedStep && iStep % 10 == 0;
-        lastloggedStep = iStep;
-        if (dir)
-          stateStr = "running cw";
-        else
-          stateStr = "running ccw";
-        break;
-      case STATE_RESET:
-        stateStr = "reset";
-        break;
-    }
-    if (okToPrint)
-    {
-      Serial.print("state: ");
-      Serial.println(stateStr);
-      Serial.print("iStep: ");
-      Serial.println(iStep);
-      Serial.print("currentStepDelay: ");
-      Serial.println(currentStepDelay);
-    }
-  }
-}
-
 void runningMotor()
 {
   if (micros() - lastTimeMotorMoved < currentStepDelay * 1000L)
@@ -348,13 +425,16 @@ void adjustStepDelay()
   }
 }
 
-int resumeMotor(String command)
+/*************************
+ * control functions
+ *************************/
+int resumeMotor()
 {
   state = STATE_START;
   return state;
 }
 
-int runMotorCw(String command)
+int runMotorCw()
 {
   dir = true;
   iStep = 0;
@@ -362,7 +442,7 @@ int runMotorCw(String command)
   return state;
 }
 
-int runMotorCcw(String command)
+int runMotorCcw()
 {
   dir = false;
   iStep = 0;
@@ -370,8 +450,67 @@ int runMotorCcw(String command)
   return state;
 }
 
-int stopMotor(String command)
+int stopMotor()
 {
   state = STATE_STOP;
   return state;
 }
+
+/*************************
+ * MQTT functions
+ *************************/
+#ifdef USE_MQTT
+void mqttCallback(char* topic, byte* payload, unsigned int length)
+{
+  
+}
+
+void mqttReconnect()
+{
+  okToPublishToMqtt = mqttClient.connect(MQTT_CLIENT_ID);
+  if (okToPublishToMqtt)
+  {
+    println("MQTT connected as ", MQTT_CLIENT_ID);
+    boolean success = mqttClient.subscribe(MQTT_TOPIC);
+    if (success)
+    {
+      println("MQTT subscribed to topic ", MQTT_TOPIC);
+    }
+    else
+    {
+      okToPublishToMqtt = false;
+      mqttClient.disconnect(); // to retry later
+      println("MQTT failed to subscribe to ", MQTT_TOPIC);
+    }
+  }
+  else
+  {
+    println("MQTT failed to connect: ", mqttClient.state());
+  }
+}
+#endif // USE_MQTT
+
+/*************************
+ * aRest API functions
+ *************************/
+#ifdef USE_AREST
+int resumeMotor(String command)
+{
+  return resumeMotor();
+}
+
+int runMotorCw(String command)
+{
+  return runMotorCw();
+}
+
+int runMotorCcw(String command)
+{
+  return runMotorCcw();
+}
+
+int stopMotor(String command)
+{
+  return stopMotor();
+}
+#endif // USE_AREST
