@@ -35,7 +35,7 @@ const char* AREST_DEVICE_NAME = "";
 #include <WiFiNINA.h>
 #ifdef USE_MQTT
 #include "mqtt_secrets.h"
-#include <PubSubClient.h>
+#include <ArduinoMqttClient.h>
 #endif // USE_MQTT
 #ifdef USE_AREST
 #include "arest_secrets.h"
@@ -76,9 +76,8 @@ unsigned long lastTimeMotorMoved = 0;
 bool okToPublishToMqtt = false;
 
 #ifdef USE_MQTT
-void mqttCallback(char* topic, byte* payload, unsigned int length);
 WiFiClient wifiClient;
-PubSubClient mqttClient(MQTT_BROKER_HOST, MQTT_PORT, mqttCallback, wifiClient);
+MqttClient mqttClient(wifiClient);
 #endif // USE_MQTT
 #ifdef USE_AREST
 WiFiServer httpServer(80);
@@ -97,12 +96,10 @@ void println(T t)
   if (LOG_TO_MQTT)
   {
     if (!hasBegunPublishing)
-    {
-      mqttClient.beginPublish(MQTT_TOPIC_BASE "log", 0, false);
-    }
+      mqttClient.beginMessage(MQTT_TOPIC_BASE "log");
     mqttClient.println(t);
     hasBegunPublishing = false;
-    mqttClient.endPublish();
+    mqttClient.endMessage();
   }
 #endif
 }
@@ -119,7 +116,7 @@ void println(T t, Args... args)
     if (!hasBegunPublishing)
     {
       hasBegunPublishing = true;
-      mqttClient.beginPublish(MQTT_TOPIC_BASE "log", 0, false);
+      mqttClient.beginMessage(MQTT_TOPIC_BASE "log");
     }
     mqttClient.print(t);
   }
@@ -150,11 +147,10 @@ void setup()
     nStepsInRamp = maxSteps / 2;
   connectToWifi();
 #ifdef USE_MQTT
-  setupMqtt();
+  mqttConnect();
 #endif // USE_MQTT
 #ifdef USE_AREST
   setupRest();
-  httpServer.begin();
 #endif // USE_AREST
 }
 
@@ -194,9 +190,9 @@ void loop()
     connectToWifi();
   }
 #ifdef USE_MQTT
-  bool success = mqttClient.loop();
-  if (!success && loopCounter % 10000 == 1)
-    mqttReconnect();
+  if (loopCounter % 10000 == 1 && !mqttClient.connected())
+    mqttConnect();
+  mqttClient.poll();
 #endif // USE_MQTT
 #ifdef USE_AREST
   WiFiClient httpClient = httpServer.available();
@@ -207,13 +203,6 @@ void loop()
 /*************************
  * functions during setup
  *************************/
-#ifdef USE_MQTT
-void setupMqtt()
-{
-  mqttReconnect();
-}
-#endif // USE_MQTT
-
 #ifdef USE_AREST
 void setupRest()
 {
@@ -230,6 +219,8 @@ void setupRest()
   // Give name and ID to device (ID should be 6 characters long)
   rest.set_id(AREST_DEVICE_ID);
   rest.set_name(AREST_DEVICE_NAME);
+
+  httpServer.begin();
 }
 #endif // USE_AREST
 
@@ -452,15 +443,28 @@ int stopMotor()
  * MQTT functions
  *************************/
 #ifdef USE_MQTT
-void mqttCallback(char* topic, byte* payload, unsigned int length)
+void mqttCallback(int length)
 {
-  
+  #define BUFFER_SIZE 20
+  char buffer[BUFFER_SIZE+1] = {0};
+  int readSize = mqttClient.read(buffer, BUFFER_SIZE);
+  String command(buffer);
+  if (command == "stopMotor")
+    stopMotor();
+  else if (command == "runMotorCw")
+    runMotorCw();
+  else if (command == "runMotorCcw")
+    runMotorCcw();
+  else if (command == "resumeMotor")
+    resumeMotor();
 }
 
-void mqttReconnect()
+void mqttConnect()
 {
-  println("MQTT client state: ", mqttClient.state());
-  okToPublishToMqtt = mqttClient.connect(MQTT_CLIENT_ID);
+  mqttClient.onMessage(mqttCallback);
+  mqttClient.setId(MQTT_CLIENT_ID);
+  // mqttClient.setUsernamePassword("username", "password");
+  okToPublishToMqtt = mqttClient.connect(MQTT_BROKER_HOST, MQTT_PORT);
   if (okToPublishToMqtt)
   {
     println("MQTT connected as ", MQTT_CLIENT_ID);
@@ -472,13 +476,13 @@ void mqttReconnect()
     else
     {
       okToPublishToMqtt = false;
-      mqttClient.disconnect(); // to retry later
+      mqttClient.stop(); // to retry later
       println("MQTT failed to subscribe to ", MQTT_TOPIC_BASE "command");
     }
   }
   else
   {
-    println("MQTT failed to connect, state: ", mqttClient.state());
+    println("MQTT failed to connect, error: ", mqttClient.connectError());
   }
 }
 #endif // USE_MQTT
