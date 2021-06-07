@@ -1,4 +1,6 @@
-# Arduino Uno WIFI Rev. 2
+# Arduino IDE Projects
+
+## Arduino Uno WIFI Rev. 2
 
 Steps to prepare Arduino IDE:
 1. menu-Tools-Board-Board Manager...Install 'Arduino megaAVR Boards'.
