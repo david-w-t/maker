@@ -85,7 +85,7 @@ aREST rest = aREST();
 #endif // USE_AREST
 
 #ifdef DO_LOGGING
-bool hasBegunPublishing = false;
+bool startedOutput = false;
 
 template <typename T>
 void println(T t)
@@ -95,10 +95,10 @@ void println(T t)
 #ifdef USE_MQTT
   if (LOG_TO_MQTT)
   {
-    if (!hasBegunPublishing)
+    if (!startedOutput)
       mqttClient.beginMessage(MQTT_TOPIC_BASE "log");
-    mqttClient.println(t);
-    hasBegunPublishing = false;
+    mqttClient.print(t);
+    startedOutput = false;
     mqttClient.endMessage();
   }
 #endif
@@ -113,9 +113,9 @@ void println(T t, Args... args)
 #ifdef USE_MQTT
   if (LOG_TO_MQTT)
   {
-    if (!hasBegunPublishing)
+    if (!startedOutput)
     {
-      hasBegunPublishing = true;
+      startedOutput = true;
       mqttClient.beginMessage(MQTT_TOPIC_BASE "log");
     }
     mqttClient.print(t);
@@ -161,7 +161,6 @@ void loop()
   switch (state)
   {
     case STATE_INIT:
-      logInitialState();
       state = STATE_IDLE;
       break;
     case STATE_IDLE:
@@ -173,7 +172,6 @@ void loop()
       }
       break;
     case STATE_START:
-      logInitialState();
       state = STATE_RUNNING;
       break;
     case STATE_STOP:
@@ -255,18 +253,6 @@ void connectToWifi()
 /*************************
  * logging functions
  *************************/
-void logInitialState()
-{
-#ifdef DO_LOGGING
-  println("maxSteps: ", maxSteps);
-  println("nStepsInRamp: ", nStepsInRamp);
-  if (dir)
-    println("direction: cw");
-  else
-    println("direction: ccw");
-#endif
-}
-
 void printFirmwareStatus()
 {
 #ifdef DO_LOGGING
@@ -348,6 +334,15 @@ void logState()
   if (okToPrint)
   {
     println("state: ", stateStr);
+    if (state == STATE_INIT || state == STATE_START)
+    {
+      println("maxSteps: ", maxSteps);
+      println("nStepsInRamp: ", nStepsInRamp);
+      if (dir)
+        println("direction: cw");
+      else
+        println("direction: ccw");
+    }
     println("iStep: ", iStep);
     println("currentStepDelay: ", currentStepDelay);
   }
