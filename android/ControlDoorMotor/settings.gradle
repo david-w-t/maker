@@ -1,0 +1,2 @@
+rootProject.name = "Control Door Motor"
+include ':app'
