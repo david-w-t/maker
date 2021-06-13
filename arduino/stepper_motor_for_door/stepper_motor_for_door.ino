@@ -4,7 +4,7 @@
 */
 
 // uncomment the following to enable aRest:
-#define USE_AREST
+//#define USE_AREST
 // uncomment the following to enable MQTT:
 #define USE_MQTT
 
@@ -28,6 +28,7 @@ const int MQTT_PORT = 1883;
 // the arest_secrets.h file has the two following lines in it:
 const char* AREST_DEVICE_ID = "";
 const char* AREST_DEVICE_NAME = "";
+const char* AREST_API_KEY = "";
 // but provide the aREST device id and name.
 ***/
 #include "wifi_secrets.h"
@@ -39,6 +40,7 @@ const char* AREST_DEVICE_NAME = "";
 #endif // USE_MQTT
 #ifdef USE_AREST
 #include "arest_secrets.h"
+#include <PubSubClient.h>
 #include <aREST.h>
 #endif // USE_AREST
 
@@ -81,7 +83,8 @@ MqttClient mqttClient(wifiClient);
 #endif // USE_MQTT
 #ifdef USE_AREST
 WiFiServer httpServer(80);
-aREST rest = aREST();
+PubSubClient pubSubClient(wifiClient);
+aREST rest = aREST(pubSubClient);
 #endif // USE_AREST
 
 #ifdef DO_LOGGING
@@ -102,6 +105,9 @@ void println(T t)
     mqttClient.endMessage();
   }
 #endif
+#ifdef USE_AREST
+  // TODO
+#endif
 }
 template <typename T, typename... Args>
 void println(T t, Args... args)
@@ -120,6 +126,9 @@ void println(T t, Args... args)
     }
     mqttClient.print(t);
   }
+#endif
+#ifdef USE_AREST
+  // TODO
 #endif
   println(args...);
 }
@@ -217,6 +226,7 @@ void setupRest()
   // Give name and ID to device (ID should be 6 characters long)
   rest.set_id(AREST_DEVICE_ID);
   rest.set_name(AREST_DEVICE_NAME);
+  rest.setKey(AREST_API_KEY);
 
   httpServer.begin();
 }
